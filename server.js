@@ -1,4 +1,4 @@
-// AutoClean backend: Express + MongoDB (Mongoose) + JWT
+
 require('dotenv').config({ quiet: true });
 const express = require('express');
 const cors = require('cors');
@@ -6,15 +6,11 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-// ---------------------------------------------------------------
-// Postavke
-// ---------------------------------------------------------------
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI;
 const JWT_SECRET = process.env.JWT_SECRET;
-// Tko se registrira s ovim emailom dobiva ulogu admin (vlasnik)
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
-// Adrese frontenda kojima je dopušten pristup (odvojene zarezom)
+
 const CORS_ORIGINS = (process.env.CORS_ORIGIN || 'http://localhost:8080')
   .split(',')
   .map((s) => s.trim());
@@ -24,7 +20,6 @@ if (!MONGO_URI || !JWT_SECRET) {
   process.exit(1);
 }
 
-// Radno vrijeme autopraonice (u minutama od ponoći)
 const OPEN_MIN = 8 * 60; // 08:00
 const CLOSE_MIN = 18 * 60; // 18:00
 const SLOT_STEP = 30; // termini počinju svakih 30 minuta
@@ -32,9 +27,6 @@ const BAYS = 1; // koliko vozila se može prati istodobno
 const TIME_ZONE = 'Europe/Zagreb';
 const STATUSES = ['Zakazano', 'Završeno', 'Otkazano'];
 
-// ---------------------------------------------------------------
-// Modeli
-// ---------------------------------------------------------------
 const User = mongoose.model(
   'User',
   new mongoose.Schema({
@@ -50,8 +42,8 @@ const Service = mongoose.model(
   new mongoose.Schema({
     name: { type: String, required: true, trim: true },
     description: { type: String, default: '', trim: true },
-    price: { type: Number, required: true, min: 0 }, // EUR
-    duration: { type: Number, required: true, min: 5 } // minute
+    price: { type: Number, required: true, min: 0 }, 
+    duration: { type: Number, required: true, min: 5 } 
   })
 );
 
@@ -63,8 +55,8 @@ const Reservation = mongoose.model(
       clientEmail: String,
       service: { type: mongoose.Schema.Types.ObjectId, ref: 'Service', required: true },
       serviceName: String,
-      date: { type: String, required: true }, // YYYY-MM-DD
-      time: { type: String, required: true }, // HH:MM
+      date: { type: String, required: true }, 
+      time: { type: String, required: true }, 
       startMin: Number, // početak u minutama od ponoći
       endMin: Number, // kraj = početak + trajanje usluge
       status: { type: String, enum: STATUSES, default: 'Zakazano' }
@@ -73,9 +65,6 @@ const Reservation = mongoose.model(
   )
 );
 
-// ---------------------------------------------------------------
-// Pomoćne funkcije
-// ---------------------------------------------------------------
 const isValidDate = (s) => {
   if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
   const d = new Date(s + 'T00:00:00Z');
@@ -89,7 +78,6 @@ const toMin = (t) => {
 const toTime = (min) =>
   String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0');
 
-// Trenutni datum i vrijeme u Hrvatskoj (server na Renderu radi u UTC-u)
 function nowInZagreb() {
   const d = new Date();
   return {
@@ -98,8 +86,6 @@ function nowInZagreb() {
   };
 }
 
-// Provjera da je termin valjan: format, radno vrijeme, ne u prošlosti.
-// Vraća { error } ili { startMin, endMin }.
 function checkSlot(date, time, duration) {
   if (!isValidDate(date)) return { error: 'Datum mora biti u obliku GGGG-MM-DD.' };
   if (!isValidTime(time)) return { error: 'Vrijeme mora biti u obliku HH:MM.' };
@@ -120,8 +106,6 @@ function checkSlot(date, time, duration) {
   return { startMin, endMin };
 }
 
-// Koliko postojećih (neotkazanih) rezervacija se preklapa s terminom.
-// Dva termina se preklapaju ako: početakA < krajB  I  krajA > početakB
 function countOverlaps(date, startMin, endMin, ignoreId) {
   const filter = {
     date,
@@ -133,16 +117,11 @@ function countOverlaps(date, startMin, endMin, ignoreId) {
   return Reservation.countDocuments(filter);
 }
 
-// Omogućuje async funkcije u rutama bez try/catch u svakoj
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 const isOwnerOrAdmin = (reservation, user) =>
   user.role === 'admin' || String(reservation.user) === user.id;
 
-// ---------------------------------------------------------------
-// Autentifikacija i autorizacija (JWT)
-// ---------------------------------------------------------------
-// Provjerava token iz zaglavlja:  Authorization: Bearer <token>
 function auth(req, res, next) {
   const [type, token] = (req.headers.authorization || '').split(' ');
   if (type !== 'Bearer' || !token) {
@@ -156,21 +135,17 @@ function auth(req, res, next) {
   }
 }
 
-// Propušta samo korisnike s navedenom ulogom
+
 const requireRole = (...roles) => (req, res, next) =>
   roles.includes(req.user.role)
     ? next()
     : res.status(403).json({ message: 'Nemate ovlasti za ovu radnju.' });
 
-// ---------------------------------------------------------------
-// Express aplikacija
-// ---------------------------------------------------------------
 const app = express();
 app.use(express.json());
 app.use(
   cors({
     origin(origin, callback) {
-      // bez origin-a (Postman, Thunder Client) ili s popisa dopuštenih
       if (!origin || CORS_ORIGINS.includes(origin)) return callback(null, true);
       callback(new Error('CORS: adresa nije dopuštena'));
     }
@@ -179,9 +154,6 @@ app.use(
 
 app.get('/', (req, res) => res.json({ message: 'AutoClean API radi.' }));
 
-// ---------------------------------------------------------------
-// Korisnici: registracija, prijava, profil
-// ---------------------------------------------------------------
 app.post(
   '/api/register',
   wrap(async (req, res) => {
@@ -224,7 +196,6 @@ app.post(
   })
 );
 
-// Podaci prijavljenog korisnika (bez lozinke)
 app.get(
   '/api/me',
   auth,
@@ -235,9 +206,6 @@ app.get(
   })
 );
 
-// ---------------------------------------------------------------
-// Usluge (cjenik): čitanje svi, izmjene samo admin
-// ---------------------------------------------------------------
 app.get(
   '/api/services',
   wrap(async (req, res) => {
@@ -310,12 +278,6 @@ app.delete(
   })
 );
 
-// ---------------------------------------------------------------
-// Rezervacije
-// ---------------------------------------------------------------
-
-// Slobodni termini za odabrani datum i uslugu (PROVJERA DOSTUPNOSTI)
-// Mora biti definirana prije rute /api/reservations/:id
 app.get(
   '/api/reservations/availability',
   auth,
@@ -326,8 +288,6 @@ app.get(
     }
     const service = await Service.findById(serviceId);
     if (!service) return res.status(404).json({ message: 'Usluga nije pronađena.' });
-
-    // sve zauzete rezervacije tog dana učitamo odjednom
     const taken = await Reservation.find({ date, status: { $ne: 'Otkazano' } });
     const slots = [];
 
@@ -341,7 +301,6 @@ app.get(
   })
 );
 
-// Popis: klijent vidi samo svoje (povijest), admin vidi sve. Filter: ?status=Zakazano
 app.get(
   '/api/reservations',
   auth,
@@ -357,7 +316,6 @@ app.get(
   })
 );
 
-// Nova rezervacija (SPRJEČAVANJE DVOSTRUKIH REZERVACIJA)
 app.post(
   '/api/reservations',
   auth,
@@ -393,7 +351,6 @@ app.post(
   })
 );
 
-// Izmjena termina ili usluge (vlasnik rezervacije ili admin)
 app.put(
   '/api/reservations/:id',
   auth,
@@ -423,7 +380,6 @@ app.put(
     const slot = checkSlot(date, time, service.duration);
     if (slot.error) return res.status(400).json({ message: slot.error });
 
-    // ignoriramo samu sebe, inače bi se rezervacija sudarila sa svojim starim terminom
     if ((await countOverlaps(date, slot.startMin, slot.endMin, reservation._id)) >= BAYS) {
       return res.status(409).json({ message: 'Odabrani termin je već zauzet.' });
     }
@@ -439,7 +395,6 @@ app.put(
   })
 );
 
-// Promjena statusa (samo admin): označi kao Završeno ili Otkazano
 app.patch(
   '/api/reservations/:id/status',
   auth,
@@ -463,7 +418,6 @@ app.patch(
   })
 );
 
-// Otkazivanje (vlasnik ili admin). Rezervacija ostaje u povijesti sa statusom Otkazano.
 app.delete(
   '/api/reservations/:id',
   auth,
@@ -485,12 +439,8 @@ app.delete(
   })
 );
 
-// ---------------------------------------------------------------
-// Nepoznate rute i greške
-// ---------------------------------------------------------------
 app.use((req, res) => res.status(404).json({ message: 'Ruta ne postoji.' }));
 
-// eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   if (err.type === 'entity.parse.failed') {
     return res.status(400).json({ message: 'Neispravan JSON u zahtjevu.' });
@@ -505,9 +455,6 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Greška na poslužitelju.' });
 });
 
-// ---------------------------------------------------------------
-// Pokretanje: prvo baza, pa server
-// ---------------------------------------------------------------
 async function seedServices() {
   if ((await Service.countDocuments()) > 0) return;
   await Service.insertMany([
